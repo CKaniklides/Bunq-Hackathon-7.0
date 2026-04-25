@@ -73,7 +73,7 @@ export default function RecommendationScreen({
             Evidence Ready for Analysis
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {(['bill', 'ticket', 'calendar', 'voice', 'chat', 'payment'] as const).map(type => {
+            {(['bill', 'ticket', 'calendar', 'voice', 'chat', 'payment', 'email', 'note'] as const).map(type => {
               const count = analyzedEvidence.filter(e => e.type === type && e.status === 'done').length;
               return count > 0 ? (
                 <div key={type} className="bg-slate-50 rounded-xl p-3 text-center">

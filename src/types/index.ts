@@ -23,7 +23,16 @@ export interface Participant {
   emoji: string;
 }
 
-export type EvidenceType = 'bill' | 'receipt' | 'chat' | 'calendar' | 'ticket' | 'voice' | 'payment';
+export type EvidenceType =
+  | 'bill'
+  | 'receipt'
+  | 'chat'
+  | 'calendar'
+  | 'ticket'
+  | 'voice'
+  | 'payment'
+  | 'email'
+  | 'note';
 
 export interface Evidence {
   id: string;

@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowRight, Upload, Sparkles, Loader2, X } from 'lucide-react';
+import { ArrowRight, Upload, Sparkles, Loader2, X, Mic, MessageSquareText, Mail, NotebookPen } from 'lucide-react';
 import { Screen, AnalyzedEvidence, EvidenceType, DisputeSetup } from '../../types';
-import { analyzeFile } from '../../utils/claudeApi';
+import { analyzeFile, analyzeTextEvidence } from '../../utils/claudeApi';
 import EvidenceCard from '../EvidenceCard';
 
 interface Props {
@@ -20,11 +20,93 @@ interface PendingItem {
   label: string;
 }
 
+interface TextEvidenceDraft {
+  participantId: string;
+  type: EvidenceType;
+  title: string;
+  text: string;
+}
+
+const FILE_EVIDENCE_TYPES: EvidenceType[] = [
+  'bill',
+  'receipt',
+  'ticket',
+  'calendar',
+  'chat',
+  'voice',
+  'payment',
+  'email',
+  'note',
+];
+
+const TEXT_EVIDENCE_TYPES: EvidenceType[] = [
+  'voice',
+  'chat',
+  'email',
+  'calendar',
+  'payment',
+  'note',
+  'receipt',
+  'ticket',
+  'bill',
+];
+
+function getEvidenceTypeLabel(type: EvidenceType) {
+  switch (type) {
+    case 'bill':
+      return 'Utility Bill';
+    case 'receipt':
+      return 'Receipt';
+    case 'ticket':
+      return 'Travel Ticket';
+    case 'calendar':
+      return 'Calendar';
+    case 'chat':
+      return 'Chat';
+    case 'voice':
+      return 'Voice Explanation';
+    case 'payment':
+      return 'Payment Record';
+    case 'email':
+      return 'Email';
+    case 'note':
+      return 'Written Note';
+    default:
+      return type;
+  }
+}
+
+function getTextPlaceholder(type: EvidenceType, participantName: string) {
+  switch (type) {
+    case 'voice':
+      return `Paste ${participantName}'s voice explanation or transcript here.\n\nExample:\nI was away from March 6 to March 20, so I should not pay an equal share of the variable usage.`;
+    case 'chat':
+      return 'Paste the relevant chat messages here, including who said what and any dates or agreements.';
+    case 'email':
+      return 'Paste the email or email thread here, including sender, recipients, subject, and relevant body text.';
+    case 'calendar':
+      return 'Paste the calendar summary here, including dates away, events, and where the participant was.';
+    case 'payment':
+      return 'Paste the payment confirmation details here, including amount, sender, recipient, date, and reference.';
+    case 'note':
+      return 'Paste the written explanation, statement, or summary here.';
+    case 'receipt':
+      return 'Paste the receipt details here, including merchant, date, amount, and items if relevant.';
+    case 'ticket':
+      return 'Paste the travel ticket or booking details here, including dates, origin, destination, and traveler.';
+    case 'bill':
+      return 'Paste the bill details here, including amount, provider, billing period, and category.';
+    default:
+      return 'Paste the evidence text here.';
+  }
+}
+
 export default function EvidenceScreen({ setup, onNavigate, apiKey, analyzedEvidence, onEvidenceAdd }: Props) {
   const { participants } = setup;
   const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [uploadTypePrompt, setUploadTypePrompt] = useState<{ participantId: string; file: File } | null>(null);
+  const [textEvidencePrompt, setTextEvidencePrompt] = useState<TextEvidenceDraft | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileInputParticipant, setFileInputParticipant] = useState<string>('');
 
@@ -60,6 +142,50 @@ export default function EvidenceScreen({ setup, onNavigate, apiKey, analyzedEvid
     }
   }, [apiKey, onEvidenceAdd, participants]);
 
+  const handleTextEvidence = useCallback(async (draft: TextEvidenceDraft) => {
+    const trimmedText = draft.text.trim();
+    if (!trimmedText) return;
+
+    const pendingId = `${draft.participantId}-${draft.type}-text-${Date.now()}`;
+    const pending: PendingItem = {
+      id: pendingId,
+      participantId: draft.participantId,
+      type: draft.type,
+      label: draft.title.trim() || getEvidenceTypeLabel(draft.type),
+    };
+    setPendingItems(prev => [...prev, pending]);
+
+    try {
+      const participant = participants.find(p => p.id === draft.participantId)!;
+      const result = await analyzeTextEvidence(
+        apiKey,
+        trimmedText,
+        draft.type,
+        draft.participantId,
+        participant.name,
+        draft.title.trim() || undefined,
+      );
+      onEvidenceAdd(result);
+    } catch (err) {
+      const errorEv: AnalyzedEvidence = {
+        id: pendingId,
+        participantId: draft.participantId,
+        type: draft.type,
+        status: 'error',
+        title: draft.title.trim() || getEvidenceTypeLabel(draft.type),
+        subtitle: '',
+        extractedFacts: [],
+        confidence: 0,
+        confidenceLabel: 'Low',
+        structuredData: {},
+        error: err instanceof Error ? err.message : 'Analysis failed',
+      };
+      onEvidenceAdd(errorEv);
+    } finally {
+      setPendingItems(prev => prev.filter(p => p.id !== pendingId));
+    }
+  }, [apiKey, onEvidenceAdd, participants]);
+
   const handleDrop = (e: React.DragEvent, participantId: string) => {
     e.preventDefault();
     setDragOver(null);
@@ -86,6 +212,15 @@ export default function EvidenceScreen({ setup, onNavigate, apiKey, analyzedEvid
     fileInputRef.current?.click();
   };
 
+  const openTextEvidenceModal = (participantId: string) => {
+    setTextEvidencePrompt({
+      participantId,
+      type: 'voice',
+      title: '',
+      text: '',
+    });
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -96,7 +231,7 @@ export default function EvidenceScreen({ setup, onNavigate, apiKey, analyzedEvid
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp,application/pdf"
+        accept="image/jpeg,image/png,image/webp,application/pdf,text/plain,text/markdown,text/csv,message/rfc822,application/json,.txt,.md,.csv,.eml,.json"
         className="hidden"
         onChange={handleFileInputChange}
       />
@@ -118,26 +253,122 @@ export default function EvidenceScreen({ setup, onNavigate, apiKey, analyzedEvid
               onClick={e => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-slate-800">What type of document?</h3>
+                <h3 className="font-bold text-slate-800">What type of evidence?</h3>
                 <button onClick={() => setUploadTypePrompt(null)}>
                   <X className="w-4 h-4 text-slate-400" />
                 </button>
               </div>
               <p className="text-xs text-slate-500 mb-4 truncate">File: {uploadTypePrompt.file.name}</p>
               <div className="grid grid-cols-2 gap-2">
-                {(['bill', 'ticket', 'calendar', 'chat', 'voice', 'payment'] as EvidenceType[]).map(type => (
+                {FILE_EVIDENCE_TYPES.map(type => (
                   <button
                     key={type}
                     onClick={() => handleUploadTypeSelect(type)}
-                    className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all capitalize text-left"
+                    className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all text-left"
                   >
-                    {type === 'bill' ? 'Utility Bill' :
-                     type === 'ticket' ? 'Flight Ticket' :
-                     type === 'calendar' ? 'Calendar' :
-                     type === 'chat' ? 'Chat Screenshot' :
-                     type === 'voice' ? 'Voice Note' : 'Payment Record'}
+                    {getEvidenceTypeLabel(type)}
                   </button>
                 ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {textEvidencePrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+            onClick={() => setTextEvidencePrompt(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-xl p-6 max-w-2xl w-full"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-slate-800">Add voice or text evidence</h3>
+                <button onClick={() => setTextEvidencePrompt(null)}>
+                  <X className="w-4 h-4 text-slate-400" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                    Evidence type
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {TEXT_EVIDENCE_TYPES.map(type => (
+                      <button
+                        key={type}
+                        onClick={() => setTextEvidencePrompt(prev => prev ? { ...prev, type } : prev)}
+                        className={`px-3 py-2.5 rounded-xl border text-sm font-medium transition-all text-left ${
+                          textEvidencePrompt.type === type
+                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                            : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        {getEvidenceTypeLabel(type)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                    Title
+                  </label>
+                  <input
+                    type="text"
+                    value={textEvidencePrompt.title}
+                    onChange={e => setTextEvidencePrompt(prev => prev ? { ...prev, title: e.target.value } : prev)}
+                    placeholder={`${getEvidenceTypeLabel(textEvidencePrompt.type)} title`}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                    Content
+                  </label>
+                  <textarea
+                    value={textEvidencePrompt.text}
+                    onChange={e => setTextEvidencePrompt(prev => prev ? { ...prev, text: e.target.value } : prev)}
+                    placeholder={getTextPlaceholder(
+                      textEvidencePrompt.type,
+                      participants.find(p => p.id === textEvidencePrompt.participantId)?.name || 'participant',
+                    )}
+                    rows={10}
+                    className="w-full px-3.5 py-3 rounded-xl border border-slate-200 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-400 transition-all resize-y"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setTextEvidencePrompt(null)}
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const draft = textEvidencePrompt;
+                      if (!draft || !draft.text.trim()) return;
+                      setTextEvidencePrompt(null);
+                      await handleTextEvidence(draft);
+                    }}
+                    disabled={!textEvidencePrompt.text.trim()}
+                    className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-semibold transition-all"
+                  >
+                    Analyze evidence
+                  </button>
+                </div>
               </div>
             </motion.div>
           </motion.div>
@@ -151,7 +382,7 @@ export default function EvidenceScreen({ setup, onNavigate, apiKey, analyzedEvid
           </span>
           <h1 className="text-3xl font-bold text-slate-900 mt-2">Evidence Upload</h1>
           <p className="text-slate-500 mt-1">
-            Upload evidence and let Claude analyze each item.
+            Upload files, paste transcripts, and add written context for Claude to analyze.
             {setup.title && <span className="font-medium text-slate-700"> · {setup.title}</span>}
           </p>
         </div>
@@ -215,7 +446,7 @@ export default function EvidenceScreen({ setup, onNavigate, apiKey, analyzedEvid
                         type: p.type,
                         status: 'analyzing',
                         title: p.label,
-                        subtitle: 'Analyzing with Claude AI…',
+                        subtitle: 'Analyzing with Claude AI...',
                         extractedFacts: [],
                         confidence: 0,
                         confidenceLabel: 'Low',
@@ -233,7 +464,10 @@ export default function EvidenceScreen({ setup, onNavigate, apiKey, analyzedEvid
 
               <div className="p-3 pt-0 space-y-2">
                 <div
-                  onDragOver={e => { e.preventDefault(); setDragOver(participant.id); }}
+                  onDragOver={e => {
+                    e.preventDefault();
+                    setDragOver(participant.id);
+                  }}
                   onDragLeave={() => setDragOver(null)}
                   onDrop={e => handleDrop(e, participant.id)}
                   onClick={() => triggerFileInput(participant.id)}
@@ -245,19 +479,49 @@ export default function EvidenceScreen({ setup, onNavigate, apiKey, analyzedEvid
                 >
                   <Upload className="w-3.5 h-3.5 flex-shrink-0" />
                   <span>{isDragTarget ? 'Drop to analyze' : 'Drop file or click to upload'}</span>
-                  <span className="ml-auto text-slate-300">JPG · PNG · PDF</span>
+                  <span className="ml-auto text-slate-300">JPG / PNG / PDF / TXT</span>
                 </div>
+
+                <button
+                  onClick={() => openTextEvidenceModal(participant.id)}
+                  className="w-full rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-3 py-2.5 text-xs font-medium transition-all flex items-center gap-2.5"
+                >
+                  <Mic className="w-3.5 h-3.5 text-pink-500" />
+                  <span className="flex-1 text-left">Add voice or text evidence</span>
+                  <span className="text-slate-400">Transcript / chat / email</span>
+                </button>
               </div>
             </div>
           );
         })}
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 flex items-center gap-3">
+          <Mic className="w-4 h-4 text-pink-500 flex-shrink-0" />
+          <p className="text-xs text-slate-600">
+            Add a <strong>voice explanation</strong> by pasting a transcript or written statement from each participant.
+          </p>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 flex items-center gap-3">
+          <MessageSquareText className="w-4 h-4 text-amber-500 flex-shrink-0" />
+          <p className="text-xs text-slate-600">
+            Paste <strong>chat excerpts</strong>, timeline notes, or payment details if you do not have a screenshot.
+          </p>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 flex items-center gap-3">
+          <Mail className="w-4 h-4 text-cyan-500 flex-shrink-0" />
+          <NotebookPen className="w-4 h-4 text-slate-500 flex-shrink-0 -ml-2" />
+          <p className="text-xs text-slate-600">
+            Add <strong>emails</strong> and <strong>written notes</strong> to support agreements, explanations, and context.
+          </p>
+        </div>
+      </div>
+
       <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 flex items-center gap-3">
         <Sparkles className="w-4 h-4 text-amber-500 flex-shrink-0" />
         <p className="text-xs text-amber-800">
-          <strong>Tip:</strong> Upload bills, receipts, calendars, travel tickets, chat screenshots, voice note transcripts, or payment records.
-          Claude AI extracts facts from each piece of evidence.
+          <strong>Tip:</strong> This flow now supports both file-based and text-based evidence, including bills, receipts, calendars, travel tickets, chat logs, voice explanations, payment records, emails, and written notes.
         </p>
       </div>
 
@@ -267,7 +531,7 @@ export default function EvidenceScreen({ setup, onNavigate, apiKey, analyzedEvid
           {pendingItems.length > 0 && (
             <span className="ml-2 text-violet-600">
               <Loader2 className="w-3 h-3 inline animate-spin mr-1" />
-              {pendingItems.length} analyzing…
+              {pendingItems.length} analyzing...
             </span>
           )}
         </p>

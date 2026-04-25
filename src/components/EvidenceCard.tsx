@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { FileText, Plane, Calendar, MessageSquare, Mic, CreditCard, Receipt, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
+import { FileText, Plane, Calendar, MessageSquare, Mic, CreditCard, Receipt, Mail, NotebookPen, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
 import { AnalyzedEvidence, EvidenceType } from '../types';
 
 const TYPE_META: Record<EvidenceType, { icon: React.ComponentType<{ className?: string }>, color: string, bg: string, label: string }> = {
@@ -10,6 +10,8 @@ const TYPE_META: Record<EvidenceType, { icon: React.ComponentType<{ className?: 
   chat: { icon: MessageSquare, color: 'text-amber-600', bg: 'bg-amber-50', label: 'Chat Screenshot' },
   voice: { icon: Mic, color: 'text-pink-600', bg: 'bg-pink-50', label: 'Voice Note' },
   payment: { icon: CreditCard, color: 'text-teal-600', bg: 'bg-teal-50', label: 'Payment Record' },
+  email: { icon: Mail, color: 'text-cyan-600', bg: 'bg-cyan-50', label: 'Email' },
+  note: { icon: NotebookPen, color: 'text-slate-600', bg: 'bg-slate-50', label: 'Written Note' },
 };
 
 const WAVEFORM = [3, 5, 7, 4, 8, 6, 9, 5, 7, 4, 6, 8, 5, 3, 7, 9, 4, 6, 8, 5, 4, 7, 6, 3, 8, 5, 7, 4, 6, 9];

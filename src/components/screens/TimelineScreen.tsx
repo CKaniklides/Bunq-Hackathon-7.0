@@ -6,6 +6,8 @@ import {
   FileText,
   Home,
   Info,
+  Mail,
+  NotebookPen,
   Plane,
   ShieldCheck,
 } from 'lucide-react';
@@ -147,6 +149,20 @@ const EVIDENCE_META: Record<
     bg: 'bg-teal-50',
     border: 'border-teal-100',
     source: 'Payment evidence',
+  },
+  email: {
+    icon: Mail,
+    color: 'text-cyan-600',
+    bg: 'bg-cyan-50',
+    border: 'border-cyan-100',
+    source: 'Email evidence',
+  },
+  note: {
+    icon: NotebookPen,
+    color: 'text-slate-600',
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    source: 'Written evidence',
   },
 };
 
